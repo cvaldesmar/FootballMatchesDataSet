@@ -1,0 +1,10 @@
+# Dependencias principales de scraping y peticiones HTTP
+requests
+beautifulsoup4
+
+# Herramientas de depuración y salida formateada por consola
+colorama
+icecream
+
+# Depuración opcional (descomentar si se usa pretty_errors)
+# pretty-errors

@@ -1,4 +1,5 @@
 import requests, os, pickle
+from datetime import datetime
 from bs4 import BeautifulSoup
 from colorama import Fore, Back, Style
 import UtilsAndGlobals as ut
@@ -21,15 +22,17 @@ class RefereesHelper:
         if ut.loadReferees:
             self._LOAD_REFEREES_VALUES()
 
-    def getMatchRefereeAndResults(self, temporada, division, localGlobalId, visitanteGlobalId):
+    def getMatchRefereeAndResults(self, temporada, division, matchDate, localName, visitanteName):
+        if not ut.loadReferees:
+            return ("", -1, "")
         ut.CHECK_KEY_EXISTANCE(temporada, self.SEASON_DIVISION_MATCHES_REFEREES, {})
         ut.CHECK_KEY_EXISTANCE(division, self.SEASON_DIVISION_MATCHES_REFEREES[temporada], lambda: self._scrapeSeasonRefereesMatchesByLeague(temporada, division))
-        matchId = str(localGlobalId) +"-"+ str(visitanteGlobalId)
-        if matchId in self.SEASON_DIVISION_MATCHES_REFEREES[temporada][division]:
-            return self.SEASON_DIVISION_MATCHES_REFEREES[temporada][division][matchId]
-        #TODO QUIZÁS METERME EN https://www.transfermarkt.es/laliga2/gesamtspielplan/wettbewerb/ES2/saison_id/1970 Y BUSCAR EL RESULTADO AL MENOS
-        return (None, None, None)
         
+        matchKey = f"{matchDate}-{localName}-{visitanteName}"
+        if matchKey in self.SEASON_DIVISION_MATCHES_REFEREES[temporada][division]:
+            return self.SEASON_DIVISION_MATCHES_REFEREES[temporada][division][matchKey]
+        
+        return ("", -1, "")
 
     def _CHECK_REFEREE_ID(self, refereeName):
         if refereeName in self.REFEREE_NAMES_TO_ID:
@@ -40,8 +43,8 @@ class RefereesHelper:
         
     def _scrapeSeasonRefereesMatchesByLeague(self, añoTemporada, division):
         refereesNamesIDsAndHrefs=[]
-        print(Fore.RED + f"Scraping {añoTemporada}ª Referees"+Fore.RESET)
         url  = ut.REFEREES_URL % (division, añoTemporada)
+        print(Fore.RED + f"Scraping {añoTemporada}ª Referees"+Fore.RESET + f" {url}")
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',}
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
@@ -64,22 +67,13 @@ class RefereesHelper:
             refereeHref = referee[1]
             refereeId = referee[2]
             datosArbitro = self._scrapeRefereeMatches(refereeName, refereeHref, refereeId, añoTemporada, division)
-            datosPartidosyArbitros = {k: v for d in (datosPartidosyArbitros, datosArbitro) for k, v in d.items()} if not any(k in datosPartidosyArbitros and k in datosArbitro for k in datosPartidosyArbitros.keys()) else ValueError("Key conflict detected")
-
-
-            # if any(datosPartidosyArbitrosPorDivision[key].keys() & datosArbitro[key].keys() for key in set(datosPartidosyArbitrosPorDivision) & set(datosArbitro)):
-            #     print(str(datosArbitro))
-            #     print(str(datosPartidosyArbitrosPorDivision))
-            #     common_keys = set(datosPartidosyArbitrosPorDivision) & set(datosArbitro)
-            #     repeated_keys = [key for key in common_keys if datosPartidosyArbitrosPorDivision[key].keys() & datosArbitro[key].keys()]
-            #     print(repeated_keys)
-            #     ut.RAISE("Imposible, partidos duplicados en la liga")
-            # datosPartidosyArbitrosPorDivision = {k: {**datosPartidosyArbitrosPorDivision.get(k, {}), **datosArbitro.get(k, {})} for k in set(datosPartidosyArbitrosPorDivision) | set(datosArbitro)}
+            datosPartidosyArbitros.update(datosArbitro)
         return datosPartidosyArbitros
 
     def _scrapeRefereeMatches(self, arbitroName, arbitroHref, arbitroId, añoTemporada, division):
         partidosDivision = {}
         url = ut.REFEREES_MATCHES_URL % (arbitroHref, añoTemporada, division)
+        print(f"Scraping arbitro: {url}")
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36',}
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
@@ -90,27 +84,46 @@ class RefereesHelper:
                 trs =  table.find_all('tr')
                 trs = trs[2:]
                 for tr in trs:
+                    tds = tr.find_all('td')
+                    if len(tds) < 7:
+                        continue
+                    raw_date = tds[1].get_text(strip=True)
+                    if not raw_date:
+                        continue
+                    try:
+                        matchDate = datetime.strptime(raw_date, '%d/%m/%Y').strftime('%Y-%m-%d')
+                    except Exception:
+                        continue
+
                     tdsEquipos = tr.find_all('td', class_="no-border-links")
-                    equipoName1 = tdsEquipos[0].find('a').text if tdsEquipos[0].find('a') else None
-                    equipoName2 = tdsEquipos[1].find('a').text if tdsEquipos[1].find('a') else None
-                    equipoName1alternative = tdsEquipos[0].find('a').get('title', None) if tdsEquipos[0].find('a') else None
-                    equipoName2alternative = tdsEquipos[1].find('a').get('title', None) if tdsEquipos[1].find('a') else None
+                    if len(tdsEquipos) < 2 or not tdsEquipos[0].find('a') or not tdsEquipos[1].find('a'):
+                        continue
+                    equipoName1 = tdsEquipos[0].find('a').text.strip()
+                    equipoName2 = tdsEquipos[1].find('a').text.strip()
+                    equipoName1alternative = tdsEquipos[0].find('a').get('title', None)
+                    equipoName2alternative = tdsEquipos[1].find('a').get('title', None)
                     
-                    resultado = tdsEquipos[1].find_next_sibling().find('a', class_='ergebnis-link').text
+                    res_tag = tdsEquipos[1].find_next_sibling().find('a', class_='ergebnis-link')
+                    resultado = res_tag.text.strip() if res_tag else ""
 
                     equipo1ID = ut.GET_GLOBAL_EQUIPO_ID_FROM_TRANSFERMARKT_NAME(equipoName1, equipoName1alternative)
                     equipo2ID = ut.GET_GLOBAL_EQUIPO_ID_FROM_TRANSFERMARKT_NAME(equipoName2, equipoName2alternative)
-                    strPartido = str(equipo1ID) +"-"+ str(equipo2ID)
-                    partidosDivision[strPartido] = [arbitroName, arbitroId, resultado]
+                    if equipo1ID is not None and equipo2ID is not None:
+                        team1_name = ut.IDs_TO_TEAM[equipo1ID].nombre if equipo1ID in ut.IDs_TO_TEAM else None
+                        team2_name = ut.IDs_TO_TEAM[equipo2ID].nombre if equipo2ID in ut.IDs_TO_TEAM else None
+                        if team1_name and team2_name:
+                            matchKey = f"{matchDate}-{team1_name}-{team2_name}"
+                            partidosDivision[matchKey] = [arbitroName, arbitroId, resultado]
         return partidosDivision
 
-    def SAVE_REFEREES_VALUES(self, path=ut.SAVE_REFEREES_PATH):
+    def SAVE_REFEREES_VALUES(self, path=None):
+        path = path or ut.SAVE_REFEREES_PATH
         with open(path, 'wb') as file:
-            pickle.dump(SEASON_DIVISION_MATCHES_REFEREES, file)
+            pickle.dump(self.SEASON_DIVISION_MATCHES_REFEREES, file)
 
-    def _LOAD_REFEREES_VALUES(self, path=ut.SAVE_REFEREES_PATH):
+    def _LOAD_REFEREES_VALUES(self, path=None):
+        path = path or ut.SAVE_REFEREES_PATH
         if os.path.exists(path):
-            global SEASON_DIVISION_MATCHES_REFEREES
             with open(path, 'rb') as file:
                 loaded_dict = pickle.load(file)
-            SEASON_DIVISION_MATCHES_REFEREES=loaded_dict
+            self.SEASON_DIVISION_MATCHES_REFEREES = loaded_dict

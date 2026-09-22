@@ -15,13 +15,15 @@ class MarketHelper:
 
     def _init_singleton(self):
         self.firstMarketDate = datetime.now().date()
-        # self.notInCorrectionTeams = set()
-        # self.notInMarketTeams = set()
         self.MARKET_INFO = {}
         if ut.loadMarket:
             self._LOAD_MARKET_VALUES()
-        ut.CHECK_KEY_EXISTANCE(1, self.MARKET_INFO, lambda: self._scrapeMarketDatesToDictionary(1))
-        ut.CHECK_KEY_EXISTANCE(2, self.MARKET_INFO, lambda: self._scrapeMarketDatesToDictionary(2))
+
+    def _ensureDivisionMarketDates(self, division):
+        if not ut.loadMarket:
+            return
+        if division not in self.MARKET_INFO or not self.MARKET_INFO[division]:
+            self.MARKET_INFO[division] = self._scrapeMarketDatesToDictionary(division)
 
     def _scrapeMarketDatesToDictionary(self, division):
         print(Fore.RED + f"Scraping {division}ª Market Dates"+Fore.RESET)
@@ -50,67 +52,76 @@ class MarketHelper:
         return teamsValues
 
     def getTeamsMarketValue(self, division, matchDate, localName, visitanteName):
-        return [self._getMarketValue(division, localName, matchDate),self._getMarketValue(division, visitanteName, matchDate)]
+        if not ut.loadMarket:
+            return (-1, -1)
+        return [self._getMarketValue(division, localName, matchDate), self._getMarketValue(division, visitanteName, matchDate)]
 
     def _getMarketValue(self, division, equipoName, matchDate):
-        matchDate = datetime.strptime(matchDate, '%Y-%m-%d').date()
-        if matchDate < self.firstMarketDate:
+        if not ut.loadMarket:
             return -1
 
-        realMarketDate = min(self.MARKET_INFO[division], key=lambda date: abs((date - matchDate) if ((date - matchDate).days)<=0 else timedelta(days=9999)))
-        if not self.MARKET_INFO[division][realMarketDate]:
-            self.MARKET_INFO[division][realMarketDate] = self.scrapeMarketTeamValues(division, realMarketDate)
+        self._ensureDivisionMarketDates(division)
+        if division not in self.MARKET_INFO or not self.MARKET_INFO[division]:
+            return -1
 
+        matchDateObj = datetime.strptime(matchDate, '%Y-%m-%d').date() if isinstance(matchDate, str) else matchDate
+        if matchDateObj < self.firstMarketDate:
+            return -1
 
+        # Obtener candidatos para el nombre del equipo según mapeos conocidos
+        tm_names = ut.NAMES_TO_TRANSFERMARKT_NAMES.get(equipoName, equipoName)
+        candidate_names = tm_names if isinstance(tm_names, list) else [tm_names]
+        if equipoName not in candidate_names:
+            candidate_names.append(equipoName)
 
-        if equipoName not in ut.NAMES_TO_TRANSFERMARKT_NAMES:
-            # self.notInCorrectionTeams.add(equipoName)
-            equipoNames = equipoName
-        else:
-            equipoNames = ut.NAMES_TO_TRANSFERMARKT_NAMES[equipoName]
-        equipoNames = equipoNames if isinstance(equipoNames, list) else [equipoNames]
-        
-        results = []
-        for equipoName in equipoNames:
-             for key, market_list in self.MARKET_INFO.items():
-                if equipoName in market_list[realMarketDate]:
-                    results.append((equipoName, key))
-                    ut.RAISE_IF(equipoName not in self.MARKET_INFO[key][realMarketDate], "WTF")
+        # Buscar en la división actual y fallback en la división alternativa
+        backupDivision = 1 if division == 2 else 2
+        self._ensureDivisionMarketDates(backupDivision)
 
-        print(results)
+        for div in (division, backupDivision):
+            if div not in self.MARKET_INFO or not self.MARKET_INFO[div]:
+                continue
 
-        #TODO aqui quizás hacer la búsqueda y que salgan literalmente la division en la que está y el nombre que utiliza
+            # Buscar fecha de mercado más cercana (anterior o igual al partido)
+            past_dates = [d for d in self.MARKET_INFO[div] if (matchDateObj - d).days >= 0]
+            divMarketDate = min(past_dates, key=lambda d: (matchDateObj - d).days) if past_dates else min(self.MARKET_INFO[div], key=lambda d: abs((d - matchDateObj).days))
+            if not divMarketDate:
+                continue
 
+            if not self.MARKET_INFO[div].get(divMarketDate):
+                self.MARKET_INFO[div][divMarketDate] = self.scrapeMarketTeamValues(div, divMarketDate)
 
+            market_dict = self.MARKET_INFO[div][divMarketDate]
+            if not market_dict:
+                continue
 
-        if equipoName not in self.MARKET_INFO[division][realMarketDate]:
-            backupDivision = 1 if division==2 else 2
-            if not self.MARKET_INFO[backupDivision][realMarketDate]:
-                self.MARKET_INFO[backupDivision][realMarketDate] = self.scrapeMarketTeamValues(backupDivision, realMarketDate)
-            if equipoName in self.MARKET_INFO[backupDivision][realMarketDate]:
-                return self._getMarketValue(backupDivision, equipoName, str(matchDate))
-            found_keys = [key for key in self.MARKET_INFO[division][realMarketDate].keys() if equipoName in key]
-            found_keys2 = [key for key in self.MARKET_INFO[backupDivision][realMarketDate].keys() if equipoName in key]
-            
-            if not found_keys and not found_keys2:
-                # self.notInMarketTeams.add(equipoName)
-                return -1
-            else:
-                if not found_keys:
-                    found_keys = found_keys2
-                    division = backupDivision
-                #print(f"equipoName:{equipoName} foundkeys: {found_keys} in div: {division}")
-            backupEquipoName = equipoName
-            equipoName = found_keys[0]
-            print(f"oldequipoName:{backupEquipoName} - new equipoName:{equipoName} ")
-        return self.MARKET_INFO[division][realMarketDate][equipoName]
+            # 1. Coincidencia exacta de alguno de los nombres candidatos
+            for name in candidate_names:
+                if name in market_dict:
+                    return market_dict[name]
+
+            # 2. Coincidencia por contención de substring (ej. 'Espanyol' en 'RCD Espanyol')
+            for name in candidate_names:
+                for key, val in market_dict.items():
+                    if name in key or key in name:
+                        return val
+
+            # 3. Coincidencia por texto normalizado (sin tildes, acrónimos FC/CF/UD, etc.)
+            for name in candidate_names:
+                clean_name = ut._clean_team_text(name)
+                for key, val in market_dict.items():
+                    if clean_name == ut._clean_team_text(key):
+                        return val
+
+        return -1
 
     def _SET_FIRST_MARKET_DATE(self, collection):
         earliest_date = min(collection)
         if earliest_date < self.firstMarketDate:
             self.firstMarketDate = earliest_date
 
-    def SAVE_MARKET_VALUES(self, path=ut.SAVE_MARKET_PATH):
+    def SAVE_MARKET_VALUES(self, path=None):
+        path = path or ut.SAVE_MARKET_PATH
         with open(path, 'wb') as file:
             pickle.dump(self.MARKET_INFO, file)
         # with open('uncorrectedMarketNames.txt', 'w', encoding='utf-8') as f:
@@ -118,15 +129,17 @@ class MarketHelper:
         # with open('notInMarketNames.txt', 'w', encoding='utf-8') as f:
         #     f.write(f"{self.notInMarketTeams}")
 
-    def _LOAD_MARKET_VALUES(self, path=ut.SAVE_MARKET_PATH):
+    def _LOAD_MARKET_VALUES(self, path=None):
+        path = path or ut.SAVE_MARKET_PATH
         if os.path.exists(path):
             with open(path, 'rb') as file:
                 loaded_dict = pickle.load(file)
             self.MARKET_INFO=loaded_dict
 
             dates = set()
-            if 1 in self.MARKET_INFO:
+            if 1 in self.MARKET_INFO and isinstance(self.MARKET_INFO[1], dict):
                 dates.update(self.MARKET_INFO[1].keys())
-            if 2 in self.MARKET_INFO:
+            if 2 in self.MARKET_INFO and isinstance(self.MARKET_INFO[2], dict):
                 dates.update(self.MARKET_INFO[2].keys())
-            self._SET_FIRST_MARKET_DATE(dates)
+            if dates:
+                self._SET_FIRST_MARKET_DATE(dates)

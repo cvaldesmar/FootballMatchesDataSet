@@ -15,7 +15,8 @@ class Equipo:
         return aux
 
     def __str__(self):
-        return "%s-%s (%s€)" % (self.idGlobalClub, self.nombre, self.valorActual)
+        val_str = f"{self.valorActual}M€" if self.valorActual > 0 else "N/D"
+        return f"{self.idGlobalClub}-{self.nombre} ({val_str})"
 
     def __repr__(self):
         return self.__str__()

@@ -165,3 +165,6 @@ build/
 
 #NDK
 obj/
+
+# Backups
+backup/

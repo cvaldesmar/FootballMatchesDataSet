@@ -9,8 +9,8 @@ class FileScraper:
 
     def filterData(self, division, temporada):
         filteredRows = []
-        # Open the CSV file and read it row by row
-        with open(ut.SAVE_SEASONS_PATH, 'r', encoding="utf-8") as csvfile:
+        input_path = getattr(ut, 'INPUT_SEASONS_PATH', ut.SAVE_SEASONS_PATH)
+        with open(input_path, 'r', encoding="utf-8") as csvfile:
             reader = csv.DictReader(csvfile, delimiter=';')
             for row in reader:
                 rowDivision = int(row['division'])
