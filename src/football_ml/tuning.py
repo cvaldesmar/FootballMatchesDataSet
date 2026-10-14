@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import joblib
@@ -80,11 +81,17 @@ def tune_model(
         raise RuntimeError("Instala requirements-ml.txt para usar Optuna") from error
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    print(
+        f"[tune] Modelo {model_name}: iniciando {n_trials} trials; "
+        f"{len(frame):,} filas, {len(__import__('src.football_ml.walk_forward', fromlist=['ordered_rounds']).ordered_rounds(frame))} rondas",
+        flush=True,
+    )
     sampler = optuna.samplers.TPESampler(seed=seed)
     pruner = optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=3)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
 
     def objective(trial: Any) -> float:
+        started = perf_counter()
         params = suggest_params(trial, model_name)
         result = walk_forward_evaluate(
             frame,
@@ -97,9 +104,17 @@ def tune_model(
         )
         trial.set_user_attr("metrics", result.metrics)
         trial.set_user_attr("rounds", result.rows_evaluated)
+        print(
+            f"[tune] {model_name} trial {trial.number + 1}/{n_trials} terminado: "
+            f"score={result.metrics['combined_score']:.4f}, "
+            f"balanced_acc={result.metrics['balanced_accuracy']:.4f}, "
+            f"log_loss={result.metrics['log_loss']:.4f}, "
+            f"tiempo={perf_counter() - started:.1f}s",
+            flush=True,
+        )
         return result.metrics["combined_score"]
 
-    study.optimize(objective, n_trials=n_trials)
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
     best = study.best_trial
     best_result = walk_forward_evaluate(
         frame,
@@ -108,6 +123,11 @@ def tune_model(
         min_train_rounds=min_train_rounds,
         max_train_rounds=max_train_rounds,
         max_validation_rounds=max_validation_rounds,
+    )
+    print(
+        f"[tune] Modelo {model_name}: mejor trial={best.number}, "
+        f"score={best_result.metrics['combined_score']:.4f}",
+        flush=True,
     )
     return {
         "model_name": model_name,
@@ -131,6 +151,7 @@ def tune_catalog(
     output_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Optimiza todos los modelos disponibles y persiste el campeón."""
+    print(f"[tune] Inicio del catálogo: {', '.join(model_names)}", flush=True)
     results = [
         tune_model(
             frame,
@@ -143,6 +164,10 @@ def tune_catalog(
         for name in model_names
     ]
     winner = max(results, key=lambda result: result["metrics"]["combined_score"])
+    print(
+        f"[tune] CAMPEÓN: {winner['model_name']} score={winner['metrics']['combined_score']:.4f}",
+        flush=True,
+    )
     final_model = create_model(winner["model_name"], frame, winner["params"])
     from .preprocessing import target_series
 

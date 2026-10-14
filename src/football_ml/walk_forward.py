@@ -59,7 +59,15 @@ def walk_forward_evaluate(
     prediction_parts: list[np.ndarray] = []
     probability_parts: list[np.ndarray] = []
     details: list[dict[str, Any]] = []
+    total_steps = stop - start
     for step, round_key in enumerate(rounds[start:stop]):
+        if trial is not None:
+            print(
+                f"[tune] {trial.study.study_name if trial.study else 'trial'} "
+                f"trial={trial.number + 1} ronda={step + 1}/{total_steps} "
+                f"({round_key[0]} jornada {round_key[1]})",
+                flush=True,
+            )
         train_rounds = rounds[: start + step]
         if max_train_rounds is not None:
             train_rounds = train_rounds[-max_train_rounds:]
