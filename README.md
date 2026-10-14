@@ -91,7 +91,9 @@ El CSV histórico/enriquecido es la fuente de verdad y no se sobrescribe al gene
 python -m src.football_dataset.ml_features --input data/dataset_historico_1970_2025_enriquecido.csv --output data/dataset_ml.csv
 ```
 
-La transformación es offline y determinista. Conserva las variables numéricas útiles, elimina identificadores y texto crudo, y añade `diferenciaGolesLocal`, `diferenciaGolesVisitante`, `diferenciaValorMercado`, `ratioValorMercado`, `diferenciaPosicion`, `diferenciaPuntosForma` y `ventajaLocal`. La salida lleva el metadato `# football_dataset_ml=1` y mantiene `resultado1X2` como etiqueta.
+La transformación es offline y determinista. Conserva las variables numéricas útiles, elimina identificadores y texto crudo y mantiene `resultado1X2` como etiqueta. Además de las diferencias básicas, genera features avanzadas exclusivamente con snapshots anteriores: medias móviles de goles a favor/en contra a 5 y 10 partidos, rendimiento específico en casa/fuera, días de descanso, carga de partidos en 7 días y sobre-rendimiento frente al valor de mercado.
+
+Estas features avanzadas se calculan en el artefacto ML derivado y no modifican el CSV histórico fuente v3. La migración del esquema persistente a v4 queda separada para evitar invalidar datasets históricos existentes.
 
 Durante una generación completa también puede solicitarse el artefacto derivado con `--build-ml` y `--ml-output`.
 
@@ -147,6 +149,12 @@ python -m src.football_ml predict --model data/model.joblib --input data/partido
 ```
 
 La métrica principal es `log_loss`, complementada con `balanced_accuracy`, `macro-F1`, matriz de confusión y métricas por clase. Las columnas identificadoras de equipo y temporada se usan para trazabilidad/split, no como features crudas. Los `-1` de distancia y mercado se tratan como ausencia explícita; los `-1` que representan diferencias deportivas legítimas no se imputan.
+
+### Comparación preliminar de estrategias
+
+El subcomando `compare` evalúa multiclase directo, staged y Poisson con las mismas rondas walk-forward. En una exploración corta de 10 rondas, Poisson obtuvo el mejor `combined_score` en todas las ventanas probadas: 4 temporadas (`-0.570`), 5 (`-0.551`), 8 (`-0.565`) y 12 (`-0.487`). También obtuvo el mejor `log_loss` (1.003–1.058). Estos resultados son preliminares: todavía debe ejecutarse una validación completa sobre un holdout temporal intocable y optimizar hiperparámetros antes de elegir el campeón operativo.
+
+Como estrategias alternativas están implementados [`Staged1X2Classifier`](src/football_ml/staged.py:14), que modela empate/no empate y ganador, y [`Poisson1X2Classifier`](src/football_ml/poisson.py:14), que ajusta goles locales/visitantes y deriva las probabilidades 1X2. Ambos están integrados en el comando `compare` y validados con tests de coherencia de probabilidades; todavía debe ejecutarse una validación completa sobre holdout antes de seleccionar uno como campeón operativo.
 
 ### Optimización de modelos e hiperparámetros
 

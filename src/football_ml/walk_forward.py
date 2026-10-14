@@ -33,13 +33,14 @@ def ordered_rounds(frame: pd.DataFrame) -> list[tuple[str, int]]:
 
 def walk_forward_evaluate(
     frame: pd.DataFrame,
-    model_factory: Callable[[pd.DataFrame, dict[str, Any]], Any],
+    model_factory: Callable[[pd.DataFrame, dict[str, Any]], Any] | None = None,
     params: dict[str, Any] | None = None,
     *,
     min_train_rounds: int = 10,
     max_train_rounds: int | None = None,
     max_validation_rounds: int | None = None,
     trial: Any | None = None,
+    train_step: Callable[[pd.DataFrame, dict[str, Any]], Any] | None = None,
 ) -> WalkForwardResult:
     """Entrena antes de cada ronda y evalúa solo la ronda siguiente.
 
@@ -47,6 +48,8 @@ def walk_forward_evaluate(
     trial. El modelo se ajusta exclusivamente con rondas anteriores.
     """
     params = params or {}
+    if model_factory is None and train_step is None:
+        raise ValueError("Debe proporcionarse model_factory o train_step")
     rounds = ordered_rounds(frame)
     if len(rounds) <= min_train_rounds:
         raise ValueError("No hay suficientes rondas para walk-forward")
@@ -67,8 +70,12 @@ def walk_forward_evaluate(
         valid_mask = frame.set_index(["temporada", "jornada"]).index == round_key
         train = frame.loc[train_mask].reset_index(drop=True)
         valid = frame.loc[valid_mask].reset_index(drop=True)
-        model = model_factory(train, params)
-        model.fit(train, target_series(train))
+        if train_step is not None:
+            model = train_step(train, params)
+        else:
+            assert model_factory is not None
+            model = model_factory(train, params)
+            model.fit(train, target_series(train))
         predictions = np.asarray(model.predict(valid), dtype=int)
         probabilities = np.asarray(model.predict_proba(valid), dtype=float)
         true = target_series(valid).to_numpy()

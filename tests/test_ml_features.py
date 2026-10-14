@@ -66,3 +66,43 @@ def test_build_ml_features_preserves_source_and_uses_separate_output(tmp_path):
         rows = list(csv.DictReader(file, delimiter=";"))
     assert list(rows[0]) == ML_COLUMNS
     assert rows[0]["resultado1X2"] == "1"
+
+
+def test_advanced_features_use_only_previous_jornadas():
+    first = {column: "0" for column in HEADERS}
+    first.update(
+        {
+            "division": "1",
+            "temporada": "2021-22",
+            "jornada": "1",
+            "matchDate": "2021-08-01",
+            "localId": "1",
+            "visitanteId": "2",
+            "golesLocal": "2",
+            "golesVisitante": "0",
+            "localMarketValue": "100",
+            "visitanteMarketValue": "50",
+            "resultado1X2": "1",
+        }
+    )
+    second = dict(first)
+    second.update(
+        {
+            "jornada": "2",
+            "matchDate": "2021-08-08",
+            "golesLocal": "0",
+            "golesVisitante": "0",
+            "resultado1X2": "X",
+        }
+    )
+
+    transformed = transform_rows([first, second])
+
+    assert transformed[0]["golesFavor5Local"] == "0.0"
+    assert transformed[0]["diasDescansoLocal"] == "-1.0"
+    assert transformed[1]["golesFavor5Local"] == "2.0"
+    assert transformed[1]["golesContra5Local"] == "0.0"
+    assert transformed[1]["rachaLocalCasa"] == "1.0"
+    assert transformed[1]["partidosCasaLocal"] == "1"
+    assert transformed[1]["diasDescansoLocal"] == "7.0"
+    assert transformed[1]["partidos7DiasLocal"] == "1"

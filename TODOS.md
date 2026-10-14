@@ -96,6 +96,33 @@ Este archivo contiene únicamente los bloques pendientes y sus posibles ampliaci
 
 **Plan:** [`plan-ml-optimizacion.md`](plans/plan-ml-optimizacion.md:1). Implementado.
 
+## Bloque 9 — Ingeniería de features avanzadas
+
+### 22. Features temporales, casa/fuera y rendimiento relativo
+
+- [x] Añadir dinámica de goles local/visitante con medias móviles 5 y 10.
+- [x] Añadir rachas específicas de casa/fuera y número de partidos disponibles.
+- [x] Añadir días de descanso, partidos en los últimos 7 días y diferencia de descanso.
+- [x] Añadir sobre-rendimiento relativo al valor de mercado.
+- [ ] Migrar el esquema fuente a v4 si se decide persistir estas columnas en el CSV histórico.
+- [x] Incluir las nuevas features de forma determinista en `ml_features.py`.
+- [x] Mantener paridad de features para snapshots de fixtures futuras.
+- [x] Añadir tests de no fuga temporal para las nuevas features.
+
+**Plan:** [`plan-features-avanzadas-ml.md`](plans/plan-features-avanzadas-ml.md:1).
+
+### 23. Estrategia de target y modelos avanzados
+
+- [x] Implementar clasificador de dos etapas empate/ganador en [`staged.py`](src/football_ml/staged.py:1).
+- [x] Implementar modelo Poisson de goles y derivación 1X2 en [`poisson.py`](src/football_ml/poisson.py:1).
+- [ ] Añadir early stopping a XGBoost y LightGBM.
+- [ ] Implementar umbral calibrado para la clase empate.
+- [ ] Ajustar trials por modelo y priorizar modelos rápidos.
+- [x] Explorar ventanas recientes 4/5/8/12 temporadas con `compare`.
+- [ ] Ejecutar comparación completa sobre un holdout temporal intocable y seleccionar campeón.
+
+**Plan:** [`plan-estrategia-target-ml.md`](plans/plan-estrategia-target-ml.md:1).
+
 ## Posibles ampliaciones
 
 - Evaluar la incorporación futura de variables de Europa y ascenso al contexto competitivo.

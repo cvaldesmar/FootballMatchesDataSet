@@ -15,7 +15,14 @@ TARGET_MAPPING: Final = {"1": 0, "X": 1, "2": 2}
 CLASS_NAMES: Final = ("1", "X", "2")
 
 # IDs y temporada se conservan para trazabilidad/split, no entran al modelo.
-EXCLUDED_COLUMNS: Final = {TARGET_COLUMN, "temporada", "localId", "visitanteId"}
+EXCLUDED_COLUMNS: Final = {
+    TARGET_COLUMN,
+    "golesLocal",
+    "golesVisitante",
+    "temporada",
+    "localId",
+    "visitanteId",
+}
 MISSING_AS_ABSENCE: Final = (
     "distanciaKm",
     "diferenciaValorMercado",

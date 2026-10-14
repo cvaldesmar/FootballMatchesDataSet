@@ -39,6 +39,18 @@ def build_parser() -> argparse.ArgumentParser:
     predict.add_argument("--model", required=True)
     predict.add_argument("--input", required=True)
     predict.add_argument("--output")
+    compare = commands.add_parser("compare", help="Compara estrategias 1X2 con walk-forward")
+    compare.add_argument("--input", required=True)
+    compare.add_argument(
+        "--strategies",
+        nargs="+",
+        choices=["multiclass", "staged", "poisson"],
+        default=["multiclass", "staged", "poisson"],
+    )
+    compare.add_argument("--min-train-rounds", type=int, default=10)
+    compare.add_argument("--max-validation-rounds", type=int)
+    _add_selection_arguments(compare)
+
     tune = commands.add_parser("tune", help="Optimiza modelos e hiperparámetros con walk-forward")
     tune.add_argument("--input", required=True)
     tune.add_argument("--model", required=True)
@@ -82,7 +94,26 @@ def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
 
 def main() -> None:
     args = build_parser().parse_args()
-    if args.command == "tune":
+    if args.command == "compare":
+        from .selection import select_recent
+        from .strategies import strategy_factory
+        from .walk_forward import walk_forward_evaluate
+
+        frame = load_ml_dataset(args.input)
+        selected, _ = select_recent(
+            frame, min_season=args.min_season, last_seasons=args.last_seasons
+        )
+        comparison = {}
+        for strategy in args.strategies:
+            result = walk_forward_evaluate(
+                selected,
+                train_step=strategy_factory(strategy),
+                min_train_rounds=args.min_train_rounds,
+                max_validation_rounds=args.max_validation_rounds,
+            )
+            comparison[strategy] = result.metrics
+        print(json.dumps(comparison, ensure_ascii=False, indent=2))
+    elif args.command == "tune":
         frame = load_ml_dataset(args.input)
         selected, _ = __import__(
             "src.football_ml.selection", fromlist=["select_recent"]
